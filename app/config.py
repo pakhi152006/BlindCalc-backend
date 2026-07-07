@@ -2,8 +2,10 @@ import os
 import logging
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -26,15 +28,16 @@ class Settings:
     # Speech to Text (Whisper)
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "tiny")
 
-    # LLM (Ollama legacy - can be removed later)
+    # LLM (Ollama legacy - optional)
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "phi3")
 
     # GROQ (NEW)
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
+    # Do NOT crash server if key is missing (safe for deployment/debugging)
     if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY is missing. Please set it in environment variables.")
+        logger.warning("GROQ_API_KEY is missing. AI features may not work properly.")
 
     # Text to Speech
     TTS_DEFAULT_RATE: int = int(os.getenv("TTS_DEFAULT_RATE", "150"))
@@ -47,8 +50,11 @@ class Settings:
     ]
 
 
+# Create settings instance
 settings = Settings()
 
+# Ensure database folder exists
 os.makedirs(settings.DATABASE_DIR, exist_ok=True)
 
+# Logs (safe, no secret exposure)
 logger.info(f"Initialized settings. Database path: {settings.DATABASE_PATH}")
