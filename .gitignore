@@ -3,6 +3,6 @@ __pycache__/
 venv/
 .venv/
 .env
-database/
+
 *.db
 node_modules/

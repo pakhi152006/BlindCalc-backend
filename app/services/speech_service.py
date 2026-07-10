@@ -1,6 +1,6 @@
 import os
 import tempfile
-import whisper
+
 from app.config import settings, logger
 
 class SpeechService:
@@ -9,30 +9,48 @@ class SpeechService:
     _load_error_message = ""
 
     @classmethod
-    def _get_model(cls):
-        """
-        Lazily loads the Whisper model to speed up server boot times.
-        Handles missing dependencies (like ffmpeg) gracefully.
-        """
-        if cls._failed_to_load:
-            raise RuntimeError(f"Whisper initialization failed earlier: {cls._load_error_message}")
+def _get_model(cls):
+    """
+    Lazily loads the Whisper model only when voice feature is used.
+    """
 
-        if cls._model is None:
-            logger.info(f"Loading local Whisper model: '{settings.WHISPER_MODEL}'... This might take some time on first boot.")
-            try:
-                # Load Whisper model onto CPU/GPU
-                cls._model = whisper.load_model(settings.WHISPER_MODEL)
-                logger.info("Whisper model loaded successfully.")
-            except Exception as e:
-                cls._failed_to_load = True
-                cls._load_error_message = str(e)
-                logger.error(f"Failed to load Whisper model: {str(e)}")
-                raise RuntimeError(
-                    f"Could not load local Whisper STT model. "
-                    f"Please verify that ffmpeg is installed on your system and added to your PATH. "
-                    f"System error: {str(e)}"
-                )
-        return cls._model
+    if cls._failed_to_load:
+        raise RuntimeError(
+            f"Whisper initialization failed earlier: {cls._load_error_message}"
+        )
+
+    if cls._model is None:
+
+        logger.info(
+            f"Loading local Whisper model: '{settings.WHISPER_MODEL}'..."
+        )
+
+        try:
+            import whisper   # moved here
+
+            cls._model = whisper.load_model(
+                settings.WHISPER_MODEL
+            )
+
+            logger.info(
+                "Whisper model loaded successfully."
+            )
+
+        except Exception as e:
+
+            cls._failed_to_load = True
+            cls._load_error_message = str(e)
+
+            logger.error(
+                f"Failed to load Whisper model: {str(e)}"
+            )
+
+            raise RuntimeError(
+                f"Could not load local Whisper STT model. "
+                f"System error: {str(e)}"
+            )
+
+    return cls._model
 
     @classmethod
     def transcribe_audio(cls, audio_content: bytes) -> str:
