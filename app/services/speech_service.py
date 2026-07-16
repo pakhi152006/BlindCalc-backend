@@ -1,109 +1,42 @@
 import os
-import tempfile
-
-from app.config import settings, logger
+from groq import Groq
 
 
 class SpeechService:
 
-    _model = None
-    _failed_to_load = False
-    _load_error_message = ""
+    def __init__(self):
 
-    @classmethod
-    def _get_model(cls):
-        """
-        Lazily loads the Whisper model only when voice feature is used.
-        """
+        api_key = os.getenv("GROQ_API_KEY")
 
-        if cls._failed_to_load:
-            raise RuntimeError(
-                f"Whisper initialization failed earlier: {cls._load_error_message}"
+        if not api_key:
+            raise Exception(
+                "GROQ_API_KEY missing"
             )
 
-        if cls._model is None:
-            logger.info(
-                f"Loading local Whisper model: '{settings.WHISPER_MODEL}'..."
-            )
-
-            try:
-                # Import only when required to reduce startup memory
-                import whisper
-
-                cls._model = whisper.load_model(
-                    settings.WHISPER_MODEL
-                )
-
-                logger.info("Whisper model loaded successfully.")
-
-            except Exception as e:
-                cls._failed_to_load = True
-                cls._load_error_message = str(e)
-
-                logger.error(
-                    f"Failed to load Whisper model: {str(e)}"
-                )
-
-                raise RuntimeError(
-                    f"Could not load local Whisper STT model. "
-                    f"System error: {str(e)}"
-                )
-
-        return cls._model
+        self.client = Groq(
+            api_key=api_key
+        )
 
 
-    @classmethod
-    def transcribe_audio(cls, audio_content: bytes) -> str:
-        """
-        Saves audio bytes temporarily and transcribes using Whisper.
-        """
-
-        model = cls._get_model()
-
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".wav"
-        ) as temp_audio:
-
-            temp_audio.write(audio_content)
-            temp_path = temp_audio.name
+    async def transcribe(self, audio_data: bytes):
 
         try:
-            logger.info(
-                f"Transcribing audio file: {temp_path}"
+
+            result = self.client.audio.transcriptions.create(
+                file=(
+                    "audio.webm",
+                    audio_data,
+                    "audio/webm"
+                ),
+                model="whisper-large-v3-turbo"
             )
 
-            result = model.transcribe(
-                temp_path,
-                fp16=False
-            )
 
-            transcription = result.get(
-                "text",
-                ""
-            ).strip()
+            return result.text
 
-            logger.info(
-                f"Transcription result: '{transcription}'"
-            )
-
-            return transcription
 
         except Exception as e:
-            logger.error(
-                f"Error during audio transcription: {str(e)}"
+
+            raise Exception(
+                f"Groq Whisper transcription failed: {str(e)}"
             )
-
-            raise ValueError(
-                f"Whisper speech-to-text transcription failed: {str(e)}"
-            )
-
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-
-                except Exception as cleanup_err:
-                    logger.warning(
-                        f"Failed to delete temp file {temp_path}: {cleanup_err}"
-                    )

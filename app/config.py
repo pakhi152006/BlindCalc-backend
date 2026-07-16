@@ -25,10 +25,7 @@ class Settings:
     DATABASE_PATH: str = os.path.join(DATABASE_DIR, "blindcalc.db")
     DATABASE_URL: str = f"sqlite:///{DATABASE_PATH}"
 
-    # Speech to Text (Whisper)
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "tiny")
-
-    # LLM (Ollama legacy - optional)
+    # GROQ (NEW)
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "phi3")
 

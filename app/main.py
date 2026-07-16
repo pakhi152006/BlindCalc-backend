@@ -47,7 +47,7 @@ def read_root():
         "service": settings.APP_NAME,
         "database": "online",
         "models": {
-            "stt": settings.WHISPER_MODEL,
+            "stt": "groq",
             "nlu": settings.OLLAMA_MODEL
         }
     }

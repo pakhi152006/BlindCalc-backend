@@ -17,6 +17,8 @@ router = APIRouter(
     tags=["voice"]
 )
 
+speech_service = SpeechService()
+
 @router.post("/voice-calculate", response_model=CalculationResult, status_code=status.HTTP_200_OK)
 async def calculate_voice_query(
     file: UploadFile = File(...),
@@ -38,8 +40,8 @@ async def calculate_voice_query(
         )
 
     try:
-        # Step 1: Transcribe audio to text via local Whisper
-        transcription = SpeechService.transcribe_audio(audio_data)
+        # Step 1: Transcribe audio to text via Groq Whisper API
+        transcription = await speech_service.transcribe(audio_data)
         
         if not transcription.strip():
             raise ValueError("No speech could be recognized. Please speak louder and clearer.")
@@ -109,8 +111,8 @@ async def transcribe_voice(
         )
 
     try:
-        # Transcribe audio to text via local Whisper
-        transcription = SpeechService.transcribe_audio(audio_data)
+        # Transcribe audio to text via Groq Whisper API
+        transcription = await speech_service.transcribe(audio_data)
         return {"text": transcription}
     except Exception as e:
         logger.error(f"Error during audio transcription: {str(e)}")
