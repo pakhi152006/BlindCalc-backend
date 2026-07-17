@@ -1,8 +1,7 @@
 import json
 import re
-from typing import Dict, Any
-
 from groq import Groq
+
 from app.config import settings, logger
 from app.models.schemas import LLMIntentParse
 
@@ -10,74 +9,81 @@ from app.models.schemas import LLMIntentParse
 class LLMService:
     """
     BlindCalc LLM Service (Groq-based)
-    Handles:
-    - Intent parsing via Groq
-    - Rule-based fallback
+
+    Responsibilities:
+    - Convert natural language math questions into SymPy expressions
+    - Extract intent
+    - Provide structured JSON output
+    - Clean AI-generated expressions before sending to MathService
     """
 
     client = Groq(api_key=settings.GROQ_API_KEY)
 
-    # ----------------------------
+    # ---------------------------------
     # PUBLIC ENTRY POINT
-    # ----------------------------
+    # ---------------------------------
     @staticmethod
     def parse_query(query: str) -> LLMIntentParse:
         logger.info(f"Parsing query: {query}")
 
         try:
             return LLMService._query_groq(query)
+
         except Exception as e:
-            logger.warning(f"Groq failed, falling back to rules. Error: {str(e)}")
+            logger.warning(
+                f"Groq failed, using rule based parser. Error: {str(e)}"
+            )
             return LLMService._rule_based_parse(query)
 
-    # ----------------------------
-    # GROQ LLM CALL
-    # ----------------------------
+    # ---------------------------------
+    # GROQ PARSER
+    # ---------------------------------
     @staticmethod
     def _query_groq(query: str) -> LLMIntentParse:
 
         system_prompt = """
-You are a mathematical translation parser for BlindCalc AI.
-
-Extract:
-1. intent: arithmetic | scientific | solve | differentiate | integrate | limit | matrix | statistics
-2. expression: valid SymPy expression
-3. variables: list of variables
-4. parameters: JSON dict of metadata
-5. explanation: short voice-friendly explanation
-6. is_valid: boolean
-
-Rules:
-- DO NOT calculate anything
-- ONLY return raw JSON
-- factorial must be factorial(n)
-"""
+        PASTE YOUR EXISTING PROMPT HERE
+        """
 
         response = LLMService.client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query},
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
             ],
             temperature=0,
-            max_tokens=800,
+            max_tokens=800
         )
 
         content = response.choices[0].message.content.strip()
 
-        # remove ```json blocks if model adds them
-        content = re.sub(r"^```json|```$", "", content).strip()
+        content = re.sub(
+            r"^```json|```$",
+            "",
+            content
+        ).strip()
 
         data = json.loads(content)
 
+        if "expression" in data:
+            data["expression"] = LLMService._clean(
+                data["expression"]
+            )
+
         return LLMIntentParse(**data)
 
-    # ----------------------------
+    # ---------------------------------
     # RULE BASED FALLBACK
-    # (your logic kept, slightly cleaned)
-    # ----------------------------
+    # ---------------------------------
     @staticmethod
     def _rule_based_parse(query: str) -> LLMIntentParse:
+
         q = query.lower().strip()
 
         intent = "arithmetic"
@@ -133,32 +139,104 @@ Rules:
             is_valid=True
         )
 
-    # ----------------------------
+    # ---------------------------------
     # CLEANING FUNCTION
-    # ----------------------------
+    # ---------------------------------
     @staticmethod
     def _clean(text: str) -> str:
-        t = text.lower()
 
-        replacements = {
-            "plus": "+",
-            "minus": "-",
-            "times": "*",
-            "multiplied by": "*",
-            "divided by": "/",
-            "over": "/",
-            "squared": "**2",
-            "cubed": "**3",
-            "square root": "sqrt",
-            "power of": "**",
-            "what is": "",
-            "calculate": "",
-            "find": "",
+        t = text.lower().strip()
+
+        remove_words = [
+            "what is",
+            "calculate",
+            "find",
+            "please",
+            "answer",
+            "give me",
+            "the answer of",
+            "the value of",
+            "equals",
+            "equal to",
+            "is",
+        ]
+
+        for word in remove_words:
+            t = t.replace(word, "")
+
+        numbers = {
+            "zero": "0",
+            "one": "1",
+            "two": "2",
+            "three": "3",
+            "four": "4",
+            "five": "5",
+            "six": "6",
+            "seven": "7",
+            "eight": "8",
+            "nine": "9",
+            "ten": "10",
         }
 
-        for k, v in replacements.items():
-            t = t.replace(k, v)
+        for word, digit in numbers.items():
+            t = re.sub(
+                rf"\b{word}\b",
+                digit,
+                t
+            )
 
-        t = re.sub(r"(\d)([a-zA-Z])", r"\1*\2", t)
+        replacements = {
+            "sum of": "",
+            "some of": "",
+            "total of": "",
 
-        return t.strip()
+            "multiplied by": "*",
+            "divided by": "/",
+
+            "square root of": "sqrt(",
+            "square root": "sqrt(",
+
+            "power of": "**",
+
+            "plus": "+",
+            "प्लस": "+",
+
+            "minus": "-",
+            "माइनस": "-",
+
+            "times": "*",
+            "into": "*",
+
+            "divide": "/",
+            "over": "/",
+
+            "and": "+",
+        }
+
+        for old, new in replacements.items():
+            t = t.replace(old, new)
+
+        if "sqrt(" in t and ")" not in t:
+            t += ")"
+
+        t = re.sub(
+            r"[^0-9a-zA-Z+\-*/().\s]",
+            "",
+            t
+        )
+
+        t = re.sub(
+            r"(\d)([a-zA-Z])",
+            r"\1*\2",
+            t
+        )
+
+        t = re.sub(
+            r"\s+",
+            "",
+            t
+        )
+        logger.info(f"Before cleaning: {text}")
+        logger.info(f"After cleaning: {t}")
+
+        return t
