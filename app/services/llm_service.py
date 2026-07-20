@@ -285,10 +285,18 @@ Never use markdown.
             parameters["order"]=1
             explanation=f"Differentiating {expression}"
             
-        elif "solve" in q:
+        elif any(word in q for word in ["solve", "solv", "solution", "find roots"]):
             intent = "solve"
-            expr = q.replace("solve", "")
-            expr = re.sub(r"=0|equals zero", "", expr)
+            expr = re.sub(
+                r"solve|solv|solution|find roots",
+                "",
+                q
+                )
+            expr = re.sub(
+                r"=0|equals zero|equals 0|equal to 0|equal 0",
+                "",
+                expr
+                )
             expression = LLMService._clean(expr)
             explanation = f"Solving {expr} = 0"
 
