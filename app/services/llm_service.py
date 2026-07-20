@@ -371,18 +371,7 @@ Never use markdown.
         t = t.replace("pi","pi")
         t = re.sub(r"\be\b","E",t)
         # Functions
-        funcs = {
-            "sin ":"sin(",
-            "cos ":"cos(",
-            "tan ":"tan(",
-            "log ":"log(",
-            "ln ":"log(",
-            "sqrt ":"sqrt(",
-            "square root ":"sqrt(",
-            "exp ":"exp("
-        }
-        for k,v in funcs.items():
-            t = t.replace(k,v)
+        
         # close brackets
         for f in ["sin(","cos(","tan(","log(","sqrt(","exp("]:
             if f in t and ")" not in t[t.index(f):]:
