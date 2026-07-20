@@ -42,8 +42,177 @@ class LLMService:
     def _query_groq(query: str) -> LLMIntentParse:
 
         system_prompt = """
-        PASTE YOUR EXISTING PROMPT HERE
-        """
+You are the mathematical language parser for BlindCalc.
+
+Your ONLY job is to convert the user's natural language mathematical question into valid JSON.
+
+DO NOT explain.
+DO NOT solve the problem.
+DO NOT write markdown.
+DO NOT use code blocks.
+
+Return ONLY valid JSON.
+
+The JSON format MUST be:
+
+{
+  "intent": "",
+  "expression": "",
+  "variables": [],
+  "parameters": {},
+  "explanation": "",
+  "is_valid": true
+}
+
+Rules:
+
+1. expression MUST be valid SymPy syntax.
+
+Examples:
+x squared -> x**2
+x cube -> x**3
+x to the power 5 -> x**5
+
+sin x -> sin(x)
+cos x -> cos(x)
+tan x -> tan(x)
+cot x -> cot(x)
+sec x -> sec(x)
+cosec x -> csc(x)
+
+ln(x) -> log(x)
+log x -> log(x)
+
+square root of x -> sqrt(x)
+
+pi -> pi
+e -> E
+
+2x -> 2*x
+3y -> 3*y
+
+2. Detect the intent.
+
+Possible intents:
+
+arithmetic
+scientific
+solve
+differentiate
+integrate
+limit
+matrix
+statistics
+
+3. Integration examples
+
+User:
+integrate x square
+
+Return:
+
+{
+ "intent":"integrate",
+ "expression":"x**2",
+ "variables":["x"],
+ "parameters":{"wrt":"x"},
+ "explanation":"Integrate x squared",
+ "is_valid":true
+}
+
+User:
+integration of x square plus sin x
+
+Return:
+
+{
+ "intent":"integrate",
+ "expression":"x**2 + sin(x)",
+ "variables":["x"],
+ "parameters":{"wrt":"x"},
+ "explanation":"Integrate expression",
+ "is_valid":true
+}
+
+4. Differentiation
+
+User:
+differentiate x cube
+
+Return
+
+{
+ "intent":"differentiate",
+ "expression":"x**3",
+ "variables":["x"],
+ "parameters":{"wrt":"x","order":1},
+ "explanation":"Differentiate expression",
+ "is_valid":true
+}
+
+5. Limits
+
+User:
+limit of sin x by x as x approaches 0
+
+Return
+
+{
+ "intent":"limit",
+ "expression":"sin(x)/x",
+ "variables":["x"],
+ "parameters":{
+   "wrt":"x",
+   "approaches":"0"
+ },
+ "explanation":"Evaluate limit",
+ "is_valid":true
+}
+
+6. Algebra
+
+User:
+solve x square minus 4 equals 0
+
+Return
+
+{
+ "intent":"solve",
+ "expression":"x**2-4=0",
+ "variables":["x"],
+ "parameters":{"wrt":"x"},
+ "explanation":"Solve equation",
+ "is_valid":true
+}
+
+7. Statistics
+
+Detect mean, median, mode, variance, standard deviation and correlation.
+
+8. Matrix
+
+Detect determinant, inverse, transpose and multiplication.
+
+9. If the user asks for normal arithmetic:
+
+"What is 25 plus 13"
+
+Return
+
+{
+ "intent":"arithmetic",
+ "expression":"25+13",
+ "variables":[],
+ "parameters":{},
+ "explanation":"Arithmetic calculation",
+ "is_valid":true
+}
+
+Always return ONLY JSON.
+Never explain.
+Never solve.
+Never use markdown.
+"""
 
         response = LLMService.client.chat.completions.create(
             model="llama3-8b-8192",
@@ -72,9 +241,11 @@ class LLMService:
         data = json.loads(content)
 
         if "expression" in data:
-            data["expression"] = LLMService._clean(
-                data["expression"]
-            )
+            expr = data["expression"].strip()
+            # Only clean if it still looks like natural language.
+            if " " in expr:
+                expr = LLMService._clean(expr)
+                data["expression"] = expr
 
         return LLMIntentParse(**data)
 
@@ -91,21 +262,29 @@ class LLMService:
         parameters = {}
         explanation = ""
 
-        if "integrate" in q:
+        if any(k in q for k in ["integrate","integration"]):
             intent = "integrate"
-            expr = q.replace("integrate", "")
+            expr = re.sub(
+                r"^(integration of|integrate|integration)\s*",
+                "",
+                q
+                )
             expression = LLMService._clean(expr)
-            parameters["wrt"] = "x"
-            explanation = f"Integrating {expr}"
-
-        elif "differentiate" in q:
-            intent = "differentiate"
-            expr = q.replace("differentiate", "")
-            expression = LLMService._clean(expr)
-            parameters["wrt"] = "x"
-            parameters["order"] = 1
-            explanation = f"Differentiating {expr}"
-
+            parameters["wrt"]="x"
+            explanation=f"Integrating {expression}"
+            
+        elif any(k in q for k in ["differentiate","derivative","differentiate of"]):
+            intent="differentiate"
+            expr = re.sub(
+                r"^(differentiate|derivative of|derivative)\s*",
+                "",
+                q
+                )
+            expression=LLMService._clean(expr)
+            parameters["wrt"]="x"
+            parameters["order"]=1
+            explanation=f"Differentiating {expression}"
+            
         elif "solve" in q:
             intent = "solve"
             expr = q.replace("solve", "")
@@ -184,6 +363,30 @@ class LLMService:
                 digit,
                 t
             )
+            # Powers
+        t = re.sub(r"x\s*square\b", "x**2", t)
+        t = re.sub(r"x\s*cube\b", "x**3", t)
+        t = re.sub(r"([a-z])\s*to the power\s*(\d+)", r"\1**\2", t)
+        # Constants
+        t = t.replace("pi","pi")
+        t = re.sub(r"\be\b","E",t)
+        # Functions
+        funcs = {
+            "sin ":"sin(",
+            "cos ":"cos(",
+            "tan ":"tan(",
+            "log ":"log(",
+            "ln ":"log(",
+            "sqrt ":"sqrt(",
+            "square root ":"sqrt(",
+            "exp ":"exp("
+        }
+        for k,v in funcs.items():
+            t = t.replace(k,v)
+        # close brackets
+        for f in ["sin(","cos(","tan(","log(","sqrt(","exp("]:
+            if f in t and ")" not in t[t.index(f):]:
+                t += ")"
 
         replacements = {
             "sum of": "",
@@ -210,7 +413,7 @@ class LLMService:
             "divide": "/",
             "over": "/",
 
-            "and": "+",
+            
         }
 
         for old, new in replacements.items():
@@ -231,11 +434,24 @@ class LLMService:
             t
         )
 
-        t = re.sub(
-            r"\s+",
-            "",
-            t
-        )
+        # x square -> x**2
+        t = re.sub(r"\bx\s*square\b", "x**2", t)
+        t = re.sub(r"\bx\s*cube\b", "x**3", t)
+        # x to the power 5 -> x**5
+        t = re.sub(r"([a-zA-Z])\s*to\s*the\s*power\s*of\s*(\d+)", r"\1**\2", t)
+        # sin x -> sin(x)
+        t = re.sub(r"\bsin\s+([a-zA-Z0-9]+)", r"sin(\1)", t)
+        t = re.sub(r"\bcos\s+([a-zA-Z0-9]+)", r"cos(\1)", t)
+        t = re.sub(r"\btan\s+([a-zA-Z0-9]+)", r"tan(\1)", t)
+        t = re.sub(r"\blog\s+([a-zA-Z0-9]+)", r"log(\1)", t)
+        t = re.sub(r"\bln\s+([a-zA-Z0-9]+)", r"log(\1)", t)
+        t = re.sub(r"\bsqrt\s+([a-zA-Z0-9]+)", r"sqrt(\1)", t)
+        # 2x -> 2*x
+        t = re.sub(r"(\d)([a-zA-Z])", r"\1*\2", t)
+        # xy -> x*y
+        
+        # remove extra spaces only
+        t = re.sub(r"\s+", " ", t).strip()
         logger.info(f"Before cleaning: {text}")
         logger.info(f"After cleaning: {t}")
 
